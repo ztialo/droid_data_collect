@@ -1,0 +1,4 @@
+topic_subscriber:
+  ros__parameters:
+    topic_name: /chatter
+    queue_size: 10

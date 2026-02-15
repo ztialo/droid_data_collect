@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>droid_data_collect</name>
+  <version>0.0.1</version>
+  <description>ROS 2 package for topic subscription and rosbag recording workflows.</description>
+  <maintainer email="zdli@ucsc.edu">Zi Tao Li</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
