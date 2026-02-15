@@ -3,12 +3,12 @@
 ROS 2 Python package template for:
 - subscribing to a topic (starter node)
 - launching subscription with params
-- recording a topic with rosbag2
+- button-triggered rosbag recording with a standalone node
 
 ## Package layout
 - `droid_data_collect/topic_subscriber.py`: starter subscriber node (`std_msgs/msg/String`)
+- `droid_data_collect/button_bag_toggle.py`: standalone A-button toggle recorder node
 - `launch/subscriber.launch.py`: launches the subscriber with `config/topics.yaml`
-- `launch/bag_record.launch.py`: records one topic to rosbag2
 - `config/topics.yaml`: subscriber parameters
 
 ## Build
@@ -29,12 +29,12 @@ To test quickly:
 ros2 topic pub /chatter std_msgs/msg/String "{data: 'hello'}" -r 1
 ```
 
-## Record bag
+## Run bag toggle recorder
 ```bash
-ros2 launch droid_data_collect bag_record.launch.py topic:=/chatter output_dir:=my_bag
+ros2 run droid_data_collect button_bag_toggle
 ```
 
 ## Next customization
 - Change message type in `droid_data_collect/topic_subscriber.py` from `std_msgs/msg/String` to your target type.
 - Add additional subscriber nodes or timer callbacks for data collection logic.
-- Expand bag launch to include multiple topics when needed.
+- Tune `button_bag_toggle` parameters (`button_topic`, `output_base_dir`, `topics`) for your setup.

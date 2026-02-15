@@ -12,7 +12,7 @@ from typing import Optional
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
-from std_msgs.msg import Bool
+from std_msgs.msg import Int32
 
 
 class ButtonBagToggle(Node):
@@ -20,8 +20,8 @@ class ButtonBagToggle(Node):
         super().__init__('button_bag_toggle')
 
         self.declare_parameter('button_topic', '/quest/right/a_button')
-        self.declare_parameter('output_base_dir', 'bag_output')
-        self.declare_parameter('topics', ['/droid/wrist_image_left', '/external_rgb'])
+        self.declare_parameter('output_base_dir', '/media/tactilemanipulationlab/ext_linux')
+        self.declare_parameter('topics', ['/droid/wrist_image_left', '/external_rgb/compressed', '/droid/joint_states', '/droid/gripper_position'])
 
         self.button_topic = self.get_parameter('button_topic').get_parameter_value().string_value
         self.output_base_dir = self.get_parameter('output_base_dir').get_parameter_value().string_value
@@ -31,7 +31,7 @@ class ButtonBagToggle(Node):
             self.get_logger().error("Parameter 'topics' is empty; bag recording cannot start.")
 
         self._record_proc: Optional[subprocess.Popen] = None
-        self._prev_pressed = False
+        self._prev_button_count: Optional[int] = None
         self._state_lock = threading.Lock()
         self._ui_state = 'init'
         self._record_start_monotonic: Optional[float] = None
@@ -39,7 +39,7 @@ class ButtonBagToggle(Node):
         self._finished_until_monotonic: Optional[float] = None
 
         self.subscription = self.create_subscription(
-            Bool,
+            Int32,
             self.button_topic,
             self._button_callback,
             10,
@@ -50,14 +50,24 @@ class ButtonBagToggle(Node):
             f"Listening on {self.button_topic}. Press A to toggle bag recording."
         )
 
-    def _button_callback(self, msg: Bool) -> None:
-        # Trigger only on rising edge to avoid repeated toggles while held.
-        if msg.data and not self._prev_pressed:
-            if self._record_proc is None:
-                self._start_recording()
-            else:
-                self._stop_recording()
-        self._prev_pressed = msg.data
+    def _button_callback(self, msg: Int32) -> None:
+        count = msg.data
+        if self._prev_button_count is None:
+            self._prev_button_count = count
+            return
+
+        if count > self._prev_button_count:
+            # This topic is an incrementing press counter; each odd number of
+            # new presses flips state once.
+            if (count - self._prev_button_count) % 2 == 1:
+                self._toggle_recording()
+        self._prev_button_count = count
+
+    def _toggle_recording(self) -> None:
+        if self._record_proc is None:
+            self._start_recording()
+        else:
+            self._stop_recording()
 
     def _start_recording(self) -> None:
         if not self.topics:
