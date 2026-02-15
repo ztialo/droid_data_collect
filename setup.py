@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'zed_image_subscriber = droid_data_collect.zed_bridge:main',
+            'button_bag_toggle = droid_data_collect.button_bag_toggle:main',
         ],
     },
 )

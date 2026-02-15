@@ -19,6 +19,8 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration('output_dir'),
             '/droid/wrist_image_left',
             '/external_rgb',
+            '/droid/joint_states',
+            '/droid/gripper_position',
         ],
         output='screen',
     )
