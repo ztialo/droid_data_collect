@@ -17,7 +17,7 @@ class ZedBridge(Node):
             self._callback,
             1,
         )
-        self.img_pub = self.create_publisher(CompressedImage, '/droid/wrist_image_left', 10)
+        self.img_pub = self.create_publisher(CompressedImage, '/droid/wrist_image_left/compressed', 10)
         self.timer = self.create_timer(0.0333, self.publish_image) # pub at ~36Hz but eventually hz drops to match sub rate of ~30Hz
         self.last_image = None
     
