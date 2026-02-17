@@ -14,7 +14,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rosidl_runtime_py.utilities import get_message
 from std_msgs.msg import Int32, Bool
-
+import json
 
 class ButtonBagToggle(Node):
     def __init__(self) -> None:
@@ -22,8 +22,10 @@ class ButtonBagToggle(Node):
 
         self.declare_parameter('a_button_topic', '/quest/right/a_button')
         self.declare_parameter('joystick_click_topic', '/quest/right/joystick_click')
-        self.declare_parameter('output_base_dir', '/media/tactilemanipulationlab/ext_linux')
+        self.declare_parameter('output_base_dir', '/media/tactilemanipulationlab/ext_linux/bag_records')
         self.declare_parameter('topic_mode', 'full')
+        self.declare_parameter("task_instruction", "enter a task instruction")
+        self.task_instruction = self.get_parameter("task_instruction").get_parameter_value().string_value
         # self.declare_parameter('topic_mode', 'test')
         self.a_button_topic = self.get_parameter('a_button_topic').get_parameter_value().string_value
         self.joystick_click_topic = self.get_parameter('joystick_click_topic').get_parameter_value().string_value
@@ -43,6 +45,7 @@ class ButtonBagToggle(Node):
         self._ui_message = ''
         self._record_start_monotonic: Optional[float] = None
         self._last_duration_sec = 0.0
+        self._saved_recordings_count = 0
         self._finished_until_monotonic: Optional[float] = None
         self._delete_arm_min_recording_sec = 0.5
         self._topic_check_period_sec = 0.5
@@ -84,6 +87,34 @@ class ButtonBagToggle(Node):
             if (count - self._prev_button_count) % 2 == 1:
                 self._toggle_recording()
         self._prev_button_count = count
+
+    def _write_task_sidecar(self) -> None:
+        if not self.bag_path:
+            return
+
+        task = self.get_task_instruction()
+        payload = {
+            "task": task,
+            "recorded_at": datetime.now().isoformat(),
+            "topics": list(self.topics),
+        }
+
+        try:
+            os.makedirs(self.bag_path, exist_ok=True)
+            with open(os.path.join(self.bag_path, "task.json"), "w") as f:
+                json.dump(payload, f, indent=2)
+            self.get_logger().info(f"Wrote task.json to {self.bag_path}")
+        except Exception as exc:
+            self.get_logger().error(f"Failed writing task.json: {exc}")
+
+    def get_task_instruction(self) -> str:
+        with self._state_lock:
+            return self.task_instruction
+
+    def set_task_instruction(self, task_instruction: str) -> None:
+        with self._state_lock:
+            self.task_instruction = task_instruction
+
 
     def _joystick_click_callback(self, msg: Bool) -> None:
         prev_click_state = self.last_click_state
@@ -165,6 +196,8 @@ class ButtonBagToggle(Node):
             self._start_recording()
         elif can_stop:
             self._stop_recording()
+            # check if this works - added later for instruction sidecar
+            self._write_task_sidecar()
         else:
             with self._state_lock:
                 missing_topics = [topic for topic in self.topics if not self._topic_ready.get(topic, False)]
@@ -224,11 +257,17 @@ class ButtonBagToggle(Node):
                 proc.kill()
                 proc.wait(timeout=2)
 
+        bag_was_saved = False
+        if self.bag_path:
+            bag_was_saved = os.path.exists(os.path.join(self.bag_path, 'metadata.yaml'))
+
         with self._state_lock:
             now = time.monotonic()
             if self._record_start_monotonic is not None:
                 self._last_duration_sec = max(0.0, now - self._record_start_monotonic)
             self._record_start_monotonic = None
+            if bag_was_saved:
+                self._saved_recordings_count += 1
             self._ui_state = 'finished'
             self._finished_until_monotonic = now + 2.0
 
@@ -300,10 +339,11 @@ class ButtonBagToggle(Node):
         with self._state_lock:
             return all(self._topic_ready.get(topic, False) for topic in self.topics)
 
-    def get_ui_snapshot(self) -> tuple[str, float, str, list[tuple[str, bool]]]:
+    def get_ui_snapshot(self) -> tuple[str, float, str, list[tuple[str, bool]], int]:
         with self._state_lock:
             state = self._ui_state
             message = self._ui_message
+            saved_recordings_count = self._saved_recordings_count
             topic_status = [(topic, self._topic_ready.get(topic, False)) for topic in self.topics]
             if state == 'recording' and self._record_start_monotonic is not None:
                 duration = max(0.0, time.monotonic() - self._record_start_monotonic)
@@ -311,7 +351,7 @@ class ButtonBagToggle(Node):
                 duration = self._last_duration_sec
             else:
                 duration = 0.0
-            return state, duration, message, topic_status
+            return state, duration, message, topic_status, saved_recordings_count
 
     def destroy_node(self) -> bool:
         if self._record_proc is not None:
@@ -354,6 +394,8 @@ class RecorderStatusWindow:
         self.container.grid_rowconfigure(2, weight=1)
         self.container.grid_rowconfigure(3, weight=1)
         self.container.grid_rowconfigure(4, weight=1)
+        self.container.grid_rowconfigure(5, weight=1)
+        self.container.grid_rowconfigure(6, weight=1)
         self.container.grid_columnconfigure(0, weight=1)
 
         self.status = tk.Label(
@@ -376,6 +418,15 @@ class RecorderStatusWindow:
         )
         self.timer.grid(row=1, column=0, sticky='n', pady=(0, 10))
 
+        self.saved_count = tk.Label(
+            self.container,
+            text='Saved recordings this session: 0',
+            font=('Helvetica', 24, 'bold'),
+            fg='#93c5fd',
+            bg='#111827',
+        )
+        self.saved_count.grid(row=2, column=0, sticky='n', pady=(0, 12))
+
         self.hint = tk.Label(
             self.container,
             text='Press A button to start/stop recording\n' \
@@ -384,7 +435,35 @@ class RecorderStatusWindow:
             fg='#d1d5db',
             bg='#111827',
         )
-        self.hint.grid(row=2, column=0, sticky='n', pady=(0, 30))
+        self.hint.grid(row=3, column=0, sticky='n', pady=(0, 30))
+
+        self.task_instruction_var = tk.StringVar(value=self.node.get_task_instruction())
+        self.task_instruction_var.trace_add('write', self._on_task_instruction_change)
+
+        self.task_instruction_frame = tk.Frame(self.container, bg='#111827')
+        self.task_instruction_frame.grid(row=4, column=0, sticky='ew', padx=24, pady=(0, 14))
+        self.task_instruction_frame.grid_columnconfigure(1, weight=1)
+
+        self.task_instruction_label = tk.Label(
+            self.task_instruction_frame,
+            text='Task instruction:',
+            font=('Helvetica', 16, 'bold'),
+            fg='#d1d5db',
+            bg='#111827',
+        )
+        self.task_instruction_label.grid(row=0, column=0, sticky='w', padx=(4, 10))
+
+        self.task_instruction_entry = tk.Entry(
+            self.task_instruction_frame,
+            textvariable=self.task_instruction_var,
+            font=('Helvetica', 16),
+            bg='#1f2937',
+            fg='white',
+            insertbackground='white',
+            relief='flat',
+            justify='center',
+        )
+        self.task_instruction_entry.grid(row=0, column=1, sticky='ew', ipady=8)
 
         self.message = tk.Label(
             self.container,
@@ -395,10 +474,10 @@ class RecorderStatusWindow:
             wraplength=820,
             justify='center',
         )
-        self.message.grid(row=3, column=0, sticky='n', pady=(0, 20))
+        self.message.grid(row=5, column=0, sticky='n', pady=(0, 20))
 
         self.topic_frame = tk.Frame(self.container, bg='#111827')
-        self.topic_frame.grid(row=4, column=0, sticky='ew', padx=24, pady=(0, 18))
+        self.topic_frame.grid(row=6, column=0, sticky='ew', padx=24, pady=(0, 18))
         self.topic_blocks = {}
         for idx, topic in enumerate(self.node.topics):
             self.topic_frame.grid_columnconfigure(idx, weight=1)
@@ -415,6 +494,7 @@ class RecorderStatusWindow:
             self.topic_blocks[topic] = label
 
         self.root.bind('<Configure>', self._on_resize)
+        self.root.bind_all('<Button-1>', self._on_global_click, add='+')
 
     def _format_duration(self, sec: float) -> str:
         minutes = int(sec // 60)
@@ -423,9 +503,10 @@ class RecorderStatusWindow:
         return f'{minutes:02d}:{seconds:02d}.{tenth}'
 
     def _refresh(self) -> None:
-        state, duration, message, topic_status = self.node.get_ui_snapshot()
+        state, duration, message, topic_status, saved_count = self.node.get_ui_snapshot()
         self.status.config(text=self.LABELS[state], bg=self.COLORS[state])
         self.timer.config(text=self._format_duration(duration))
+        self.saved_count.config(text=f'Saved recordings this session: {saved_count}')
         self.message.config(text=message)
         for topic, is_ready in topic_status:
             block = self.topic_blocks.get(topic)
@@ -433,13 +514,25 @@ class RecorderStatusWindow:
                 block.config(bg='#2da44e' if is_ready else '#6b7280')
         self.root.after(100, self._refresh)
 
+    def _on_task_instruction_change(self, *_args) -> None:
+        self.node.set_task_instruction(self.task_instruction_var.get())
+
+    def _on_global_click(self, event) -> None:
+        if event.widget == self.task_instruction_entry:
+            return
+        self.task_instruction_entry.selection_clear()
+        self.root.focus_set()
+
     def _on_resize(self, _event) -> None:
         width = self.root.winfo_width()
         height = self.root.winfo_height()
 
         status_size = max(42, min(140, int(min(width * 0.10, height * 0.16))))
         timer_size = max(40, min(152, int(min(width * 0.11, height * 0.17))))
+        saved_count_size = max(12, min(36, int(min(width * 0.026, height * 0.04))))
         hint_size = max(14, min(34, int(min(width * 0.028, height * 0.045))))
+        task_label_size = max(11, min(24, int(min(width * 0.018, height * 0.03))))
+        task_entry_size = max(11, min(24, int(min(width * 0.018, height * 0.03))))
         message_size = max(10, min(24, int(min(width * 0.02, height * 0.032))))
         topic_size = max(9, min(16, int(min(width * 0.014, height * 0.022))))
 
@@ -450,7 +543,10 @@ class RecorderStatusWindow:
 
         self.status.config(font=('Helvetica', status_size, 'bold'))
         self.timer.config(font=('Helvetica', timer_size, 'bold'))
+        self.saved_count.config(font=('Helvetica', saved_count_size, 'bold'))
         self.hint.config(font=('Helvetica', hint_size))
+        self.task_instruction_label.config(font=('Helvetica', task_label_size, 'bold'))
+        self.task_instruction_entry.config(font=('Helvetica', task_entry_size))
         self.message.config(font=('Helvetica', message_size))
         for block in self.topic_blocks.values():
             block.config(font=('Helvetica', topic_size, 'bold'))
