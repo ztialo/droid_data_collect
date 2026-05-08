@@ -5,8 +5,6 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import CompressedImage
 
-
-
 class ZedBridge(Node):
     def __init__(self) -> None:
         super().__init__('zed_image_subscriber')

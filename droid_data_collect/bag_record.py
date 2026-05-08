@@ -31,8 +31,29 @@ class ButtonBagToggle(Node):
         self.joystick_click_topic = self.get_parameter('joystick_click_topic').get_parameter_value().string_value
         self.output_base_dir = self.get_parameter('output_base_dir').get_parameter_value().string_value
         self.topic_mode = self.get_parameter('topic_mode').get_parameter_value().string_value
+        # if self.topic_mode == 'full':
+        #             self.topics = [
+        #     '/droid/wrist_image_left/compressed',
+        #     '/external_rgb/compressed',
+        #     '/droid/joint_state',
+        #     '/droid/gripper_position',
+        #     '/droid/action/cartesian_pose',
+        #     '/droid/action/gripper_position',
+        # ]
         if self.topic_mode == 'full':
-            self.topics = ['/droid/wrist_image_left/compressed', '/external_rgb/compressed', '/droid/joint_state', '/droid/gripper_position']
+                    self.topics = [
+            '/droid/wrist_image_left/compressed',
+            '/external_rgb/compressed',
+            '/franka/obs/joint_states',
+            '/franka/obs/ee_pose',
+            # '/franka/action/joint_states',
+            '/franka/action/ee_pose',
+            '/gripper/state',
+            '/gripper/action',
+            '/coinft/left',
+            '/coinft/right',
+            '/ati'
+        ]
         elif self.topic_mode == 'test':
             self.topics = ['/external_rgb/compressed']
         if not self.topics:
@@ -427,15 +448,15 @@ class RecorderStatusWindow:
         )
         self.saved_count.grid(row=2, column=0, sticky='n', pady=(0, 12))
 
-        self.hint = tk.Label(
-            self.container,
-            text='Press A button to start/stop recording\n' \
-            'Press joystick button to delete recording',
-            font=('Helvetica', 24),
-            fg='#d1d5db',
-            bg='#111827',
-        )
-        self.hint.grid(row=3, column=0, sticky='n', pady=(0, 30))
+        # self.hint = tk.Label(
+        #     self.container,
+        #     text='Press A button to start/stop recording\n' \
+        #     'Press joystick button to delete recording',
+        #     font=('Helvetica', 24),
+        #     fg='#d1d5db',
+        #     bg='#111827',
+        # )
+        # self.hint.grid(row=3, column=0, sticky='n', pady=(0, 30))
 
         self.task_instruction_var = tk.StringVar(value=self.node.get_task_instruction())
         self.task_instruction_var.trace_add('write', self._on_task_instruction_change)
@@ -544,14 +565,14 @@ class RecorderStatusWindow:
         self.status.config(font=('Helvetica', status_size, 'bold'))
         self.timer.config(font=('Helvetica', timer_size, 'bold'))
         self.saved_count.config(font=('Helvetica', saved_count_size, 'bold'))
-        self.hint.config(font=('Helvetica', hint_size))
+        # self.hint.config(font=('Helvetica', hint_size))
         self.task_instruction_label.config(font=('Helvetica', task_label_size, 'bold'))
         self.task_instruction_entry.config(font=('Helvetica', task_entry_size))
         self.message.config(font=('Helvetica', message_size))
         for block in self.topic_blocks.values():
             block.config(font=('Helvetica', topic_size, 'bold'))
         self.status.grid_configure(padx=pad_x, pady=(pad_top, pad_mid))
-        self.hint.grid_configure(pady=(0, pad_bottom))
+        # self.hint.grid_configure(pady=(0, pad_bottom))
 
     def run(self) -> None:
         self._refresh()
